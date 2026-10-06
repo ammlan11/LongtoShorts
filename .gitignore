@@ -28,3 +28,7 @@ server.log
 # them out of git if anyone adds them)
 .env
 config.local.yaml
+
+# Packaged exports
+*.zip
+Claude outputs/
