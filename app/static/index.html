@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Shorts AI</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <h1>⚡ Shorts AI</h1>
+    <p class="tagline">Turn a long video into scroll-stopping Shorts — review a shortlist of AI-picked moments, tweak them, pick a look, then render. Runs entirely on this machine.</p>
+    <ol class="steps">
+      <li id="step-1" class="step active"><span>1</span>Upload</li>
+      <li id="step-2" class="step"><span>2</span>Review &amp; style</li>
+      <li id="step-3" class="step"><span>3</span>Your shorts</li>
+    </ol>
+  </header>
+
+  <main>
+    <section id="upload-panel" class="panel">
+      <div class="source-tabs">
+        <button id="tab-file" class="source-tab active" type="button">Upload a file</button>
+        <button id="tab-url" class="source-tab" type="button">Paste a link</button>
+      </div>
+
+      <div id="file-source">
+        <div id="dropzone" class="dropzone">
+          <p>Drop a video file here, or click to choose one</p>
+          <input id="file-input" type="file" accept="video/*" hidden />
+        </div>
+
+        <div id="selected-file" class="selected-file" hidden>
+          <span id="selected-file-name"></span>
+          <button id="clear-file">Change</button>
+        </div>
+      </div>
+
+      <div id="url-source" hidden>
+        <input id="url-input" class="url-input" type="url" placeholder="https://www.youtube.com/watch?v=…" />
+        <p class="note">Downloads locally via yt-dlp, then runs the same pipeline. Only use links to video you have the right to download and repurpose — your own uploads, or anything whose license/terms allow it.</p>
+      </div>
+
+      <div class="options">
+        <label>
+          Candidates to find
+          <input id="clip-count" type="number" min="3" max="8" value="5" />
+        </label>
+        <label class="checkbox">
+          <input id="captions-enabled" type="checkbox" checked />
+          Auto captions
+        </label>
+        <label class="checkbox">
+          <input id="use-llm" type="checkbox" checked />
+          Use local LLM to refine picks (if Ollama is running)
+        </label>
+      </div>
+      <p class="note">Shorts AI will find a handful of candidate moments for you to review next — it won't render anything until you pick which ones you want.</p>
+
+      <button id="start-btn" disabled>Find shorts</button>
+    </section>
+
+    <section id="progress-panel" class="panel" hidden>
+      <h2 id="progress-stage">Starting…</h2>
+      <div class="progress-bar"><div id="progress-fill" class="progress-fill"></div></div>
+      <p id="progress-note" class="note"></p>
+    </section>
+
+    <section id="review-panel" class="panel" hidden>
+      <h2>Pick your shorts</h2>
+      <p id="review-subtitle" class="note"></p>
+
+      <div class="style-row">
+        <label>
+          Caption style
+          <select id="caption-preset-select"></select>
+        </label>
+        <label>
+          Aspect ratio
+          <select id="aspect-preset-select"></select>
+        </label>
+      </div>
+      <p id="caption-preset-description" class="note"></p>
+
+      <div id="custom-caption-controls" class="custom-caption-controls" hidden>
+        <label>
+          Position
+          <select id="custom-position">
+            <option value="lower_third">Lower third</option>
+            <option value="center">Center</option>
+            <option value="top">Top</option>
+          </select>
+        </label>
+        <label>
+          Text size
+          <input id="custom-font-size" type="range" min="32" max="120" step="2" value="64" />
+          <span id="custom-font-size-value" class="note">64px</span>
+        </label>
+        <label>
+          Text color
+          <input id="custom-text-color" type="color" value="#ffffff" />
+        </label>
+        <label>
+          Highlight color
+          <input id="custom-highlight-color" type="color" value="#d9d926" />
+        </label>
+        <label class="custom-checkbox">
+          <input id="custom-background-box" type="checkbox" />
+          Solid background box behind text
+        </label>
+      </div>
+
+      <div id="candidates-list" class="candidates-list"></div>
+
+      <div class="review-actions">
+        <button id="back-to-upload-btn" class="secondary-btn" type="button">Start over</button>
+        <button id="render-btn" type="button">Render selected</button>
+      </div>
+    </section>
+
+    <section id="results-panel" hidden>
+      <div class="results-header">
+        <h2>Your shorts</h2>
+        <button id="start-over-btn" class="secondary-btn" type="button">Make more</button>
+      </div>
+      <div id="results-grid" class="results-grid"></div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,68 @@
+# Shorts AI — configuration
+# Every value here can also be overridden per-job from the web UI.
+
+paths:
+  storage_dir: storage          # uploads + job outputs live under here
+
+transcription:
+  # faster-whisper model size. Bigger = more accurate, slower, more RAM.
+  # tiny / base / small / medium / large-v3
+  model_size: small
+  device: cpu                   # cpu | cuda  (set cuda if you have an NVIDIA GPU)
+  compute_type: int8            # int8 is fastest on CPU; use float16 on GPU
+  language: null                # null = auto-detect
+  cpu_threads: 4                 # 0 = use every CPU core (fastest, but on a fanless
+                                 # machine like a MacBook Air this pins all cores --
+                                 # including the weak efficiency cores -- and runs hot
+                                 # enough to eventually throttle and slow back down).
+                                 # 4 sticks to roughly a performance-core's worth of
+                                 # parallelism. Raise it (or set 0) if your machine has
+                                 # a fan.
+
+highlights:
+  clip_count: 3                 # how many shorts to produce per upload
+  min_duration_sec: 20
+  max_duration_sec: 59
+  # If Ollama is running locally, it's used to rank/refine candidate segments.
+  # If it's unreachable, the tool falls back to the pure heuristic scorer —
+  # everything still works with zero LLM installed.
+  use_llm: true
+  ollama_url: http://localhost:11434
+  ollama_model: llama3.1
+
+reframe:
+  target_aspect: "9:16"         # YouTube Shorts / TikTok / Reels
+  target_width: 1080
+  target_height: 1920
+  smoothing_window: 15          # frames — higher = steadier but less responsive crop
+
+captions:
+  # These are the fallback/default values. In normal use, the review step's
+  # caption style picker (see app/pipeline/presets.py) overrides all of the
+  # fields below per-job — you generally won't need to hand-edit these.
+  enabled: true
+  font: "DejaVu Sans"
+  font_size: 64
+  highlight_color: "&H0026D9D9"   # ASS BGR: amber highlight for the active word
+  base_color: "&H00FFFFFF"        # white
+  outline_color: "&H00161616"     # near-black outline
+  back_color: "&H64000000"        # semi-transparent black (used by the "boxed" style)
+  position: "lower_third"         # lower_third | center | top
+  border_style: 1                 # 1 = outline+shadow, 3 = opaque background box
+  outline_width: 5
+  shadow_width: 2
+
+overlays:
+  # Disabled: the stat-card graphics were low-contrast and hard to read, and
+  # the number detection fired on casual phrasing that wasn't really a
+  # stat. See the comment on OverlaysConfig in app/config.py.
+  enabled: false
+  # Minimum numeric "stat" mentions in a segment before we bother drawing a card.
+  min_stats_for_card: 1
+  min_stats_for_chart: 2
+  card_seconds: 3.2               # how long a stat card / chart stays on screen
+  theme: dark                     # dark | light — matches the validated palette
+
+server:
+  host: 0.0.0.0
+  port: 8000

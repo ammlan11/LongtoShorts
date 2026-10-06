@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# App runtime data -- uploads, downloaded videos, transcripts, rendered shorts.
+# Can be many GB; never commit it.
+storage/
+server.log
+*.log
+
+# Downloaded / generated media
+*.mp4
+*.mov
+*.mkv
+*.webm
+*.wav
+*.mp3
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Local-only config overrides and secrets (none are required today, but keep
+# them out of git if anyone adds them)
+.env
+config.local.yaml
