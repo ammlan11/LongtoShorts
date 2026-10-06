@@ -1,0 +1,23 @@
+# Version floors rather than exact pins — this lets pip always pick the
+# newest prebuilt wheel for whatever Python version you're on, instead of
+# potentially being forced into a source build for an exact old version
+# that happens to lack a wheel for your interpreter. (This is what caused
+# the matplotlib/PyAV build failures during initial setup — exact pins on a
+# very new Python version.) Tested working combination: Python 3.12 on
+# macOS (Apple Silicon) and Linux.
+fastapi>=0.115
+uvicorn[standard]>=0.30
+python-multipart>=0.0.9
+faster-whisper>=1.0.3
+av<19                               # PyAV 19 dropped av.open(metadata_errors=...), which faster-whisper's audio decoder still calls (as of faster-whisper 1.2.1) — breaks every transcription otherwise
+opencv-python-headless>=4.10,<5    # 5.x dropped cv2.CascadeClassifier/cv2.data (face detection in reframe.py)
+numpy>=1.26,<2.3
+pillow>=10.4
+pyyaml>=6.0
+requests>=2.32
+# YouTube changes its CDN/throttling scheme often, and yt-dlp ships near-
+# weekly releases to keep up -- a stale install is the #1 cause of painfully
+# slow (or failing) "paste a link" downloads. Re-run
+# `pip install -U yt-dlp` inside your venv every so often if downloads feel
+# slow, independent of anything else in this app.
+yt-dlp>=2024.8.6
