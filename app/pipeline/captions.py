@@ -135,13 +135,32 @@ def burn_subtitles(input_path: str | Path, ass_path: str | Path, output_path: st
     """Burns the .ass subtitle track into the video. Kept as its own ffmpeg
     pass (rather than trying to cram every filter into one command) so each
     pipeline stage is independently testable and debuggable."""
-    ass_escaped = str(ass_path).replace("\\", "/").replace(":", "\\:")
+    # Don't put the .ass file's full path into the filter string. ffmpeg's
+    # filter syntax treats ':' as an option separator, and a Windows path
+    # ("C:/Users/...") contains one -- escaping it correctly takes two layers
+    # of quoting that differ between shells/platforms, and getting it wrong
+    # makes ffmpeg fail with "Invalid argument" (exit 234 / -22). Instead run
+    # ffmpeg *from the .ass file's own folder* and reference it by bare file
+    # name (our names, e.g. clip0.ass, have no special characters), which
+    # works identically on Windows, macOS and Linux, including in folders
+    # whose names contain spaces. Input/output paths are passed as plain
+    # argv entries (no filter parsing), so they only need to be absolute
+    # since the working directory changes.
+    ass_path = Path(ass_path)
+    ass_name = ass_path.name
+    if any(ch in ass_name for ch in "'\\:,;[]="):
+        raise ValueError(f"Unsafe subtitle file name for ffmpeg filter: {ass_name!r}")
     cmd = [
-        get_ffmpeg(require_ass=True), "-y", "-i", str(input_path),
-        "-vf", f"ass={ass_escaped}",
+        get_ffmpeg(require_ass=True), "-y", "-i", str(Path(input_path).resolve()),
+        "-vf", f"ass='{ass_name}'",
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
         "-c:a", "copy",
-        str(output_path),
+        str(Path(output_path).resolve()),
     ]
     logger.info("Burning captions: %s", ass_path)
-    subprocess.run(cmd, capture_output=True, text=True, check=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(ass_path.parent.resolve()))
+    if result.returncode != 0:
+        # Surface ffmpeg's own error text -- a bare "returned non-zero exit
+        # status" gives nobody anything to debug with.
+        tail = "\n".join((result.stderr or "").strip().splitlines()[-8:])
+        raise RuntimeError(f"ffmpeg failed to burn captions (exit {result.returncode}):\n{tail}")
