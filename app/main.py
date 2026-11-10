@@ -47,6 +47,18 @@ def index():
     return FileResponse(STATIC_DIR / "index.html")
 
 
+@app.middleware("http")
+async def no_stale_frontend(request, call_next):
+    """Make browsers re-check the page, CSS and JS on every load (cheap 304s
+    when unchanged). Without this a teammate who pulls an update can keep
+    running the *old* cached app.js/style.css and not see the fix."""
+    response = await call_next(request)
+    path = request.url.path
+    if path == "/" or path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 

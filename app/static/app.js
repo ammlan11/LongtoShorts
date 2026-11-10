@@ -422,7 +422,7 @@ function buildResultCard(jobId, short) {
         <a class="result-download" href="${downloadUrl}" download data-role="download-link">Download</a>
         <button class="secondary-btn edit-toggle-btn" type="button">Edit</button>
       </div>
-      <div class="result-edit" hidden></div>
+      <div class="result-edit" hidden style="display:none"></div>
     </div>
   `;
 
@@ -431,6 +431,9 @@ function buildResultCard(jobId, short) {
   editToggleBtn.addEventListener("click", () => {
     const willOpen = editPanel.hidden;
     editPanel.hidden = !willOpen;
+    // Inline display too, so closing works even if an older cached stylesheet
+    // lets `.result-edit {display:flex}` override the hidden attribute.
+    editPanel.style.display = willOpen ? "" : "none";
     editToggleBtn.textContent = willOpen ? "Close edit" : "Edit";
     if (willOpen && !editPanel.dataset.built) {
       buildEditPanel(editPanel, card, jobId, short);
