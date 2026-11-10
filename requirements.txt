@@ -21,3 +21,8 @@ requests>=2.32
 # `pip install -U yt-dlp` inside your venv every so often if downloads feel
 # slow, independent of anything else in this app.
 yt-dlp>=2024.8.6
+
+# Optional, Apple-Silicon Macs only: runs Whisper on the GPU via MLX -- the
+# fastest and lightest-on-RAM option (engine: auto picks it up automatically).
+# Skipped on Windows/Linux/Intel Macs, which use faster-whisper.
+mlx-whisper>=0.4; sys_platform == "darwin" and platform_machine == "arm64"

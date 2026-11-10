@@ -31,6 +31,16 @@ class TranscriptionConfig:
     # performance-core's worth of parallelism; raise it (or set 0) if your
     # machine has a fan and you want to trade heat for a bit more speed.
     cpu_threads: int = 4
+    # Which engine runs Whisper: "auto" (MLX on an Apple-Silicon Mac if
+    # mlx-whisper is installed, otherwise faster-whisper), "mlx", or
+    # "faster-whisper". See app/pipeline/transcribe.py.
+    engine: str = "auto"
+    # faster-whisper only: decode several 30 s windows at once (much faster on
+    # CPU than the one-window-at-a-time default). Set false to disable.
+    batched: bool = True
+    batch_size: int = 8
+    # Optional override of the MLX model repo, e.g. "mlx-community/whisper-small-mlx".
+    mlx_repo: Optional[str] = None
 
 
 @dataclass

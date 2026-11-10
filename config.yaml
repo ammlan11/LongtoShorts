@@ -18,6 +18,13 @@ transcription:
                                  # 4 sticks to roughly a performance-core's worth of
                                  # parallelism. Raise it (or set 0) if your machine has
                                  # a fan.
+  engine: auto                  # auto | mlx | faster-whisper
+                                # auto = MLX (Apple-Silicon GPU, fastest, light on RAM)
+                                # when `pip install mlx-whisper` is present on an M-series
+                                # Mac, otherwise faster-whisper on CPU/CUDA.
+  batched: true                 # faster-whisper: decode several 30s windows at once
+  batch_size: 8
+  mlx_repo: null                # optional override, e.g. mlx-community/whisper-small-mlx
 
 highlights:
   clip_count: 3                 # how many shorts to produce per upload

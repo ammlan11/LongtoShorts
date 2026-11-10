@@ -185,6 +185,10 @@ def analyze_video(
         cache_path=transcript_cache,
         progress_cb=_t_progress,
         cpu_threads=cfg.transcription.cpu_threads,
+        engine=cfg.transcription.engine,
+        batched=cfg.transcription.batched,
+        batch_size=cfg.transcription.batch_size,
+        mlx_repo=cfg.transcription.mlx_repo,
     )
     report("transcribing", 1.0)
 
@@ -323,6 +327,10 @@ def render_selected(
         language=cfg.transcription.language,
         cache_path=transcript_cache,
         cpu_threads=cfg.transcription.cpu_threads,
+        engine=cfg.transcription.engine,
+        batched=cfg.transcription.batched,
+        batch_size=cfg.transcription.batch_size,
+        mlx_repo=cfg.transcription.mlx_repo,
     )
     all_words = transcript.flat_words()
 

@@ -10,7 +10,7 @@ want, then touch them up (trim, keywords, AI-suggested captions) on the
 results page.
 
 Everything runs locally. Transcription uses an open-source Whisper model
-(via `faster-whisper`) that downloads once and then runs fully offline.
+(`mlx-whisper` on Apple-Silicon Macs, otherwise `faster-whisper`) that downloads once and then runs fully offline.
 Highlight selection and caption suggestions use plain heuristics by
 default; if you install [Ollama](https://ollama.com) and pull a model, the
 tool uses it to sharpen highlight picks, titles and caption suggestions.
@@ -123,6 +123,11 @@ aspect presets live in `app/pipeline/presets.py`. Worth knowing:
 
 - `transcription.model_size`: `tiny` (fastest, least accurate) → `small`
   (default) → `medium`/`large-v3` (more accurate, much slower on CPU).
+- `transcription.engine`: `auto` (default) uses MLX Whisper on the Apple-Silicon
+  GPU if `mlx-whisper` is installed (`pip install mlx-whisper`), otherwise
+  faster-whisper. If MLX fails (e.g. model can't be downloaded) the job falls
+  back to faster-whisper instead of failing. `batched`/`batch_size` control
+  faster-whisper's batched decoding.
 - `transcription.cpu_threads`: defaults to `4`. `0` uses every core, which is
   fastest on a machine with a fan but runs hot on a fanless laptop (e.g. a
   MacBook Air) and can end up slower once the chip throttles.
@@ -142,6 +147,29 @@ cause of slow or failing link downloads. There is no hard cap on source
 video length; 44-60 minute sources are supported (candidate generation is
 linear-time), but expect transcription time to scale with length.
 
+### Why transcription used to be slow (13 min video ≈ 30 min)
+
+Measured on an 8GB M2 MacBook Air with 3 minutes of real speech and the `small`
+model (`scripts/bench_transcription.py` reproduces this):
+
+| setting | time for 3 min audio | speed |
+| --- | --- | --- |
+| old defaults (beam 5, temperature fallback, condition on previous text) | 321 s | 0.56x realtime |
+| fallback off only | 99 s | 1.8x |
+| greedy + no fallback + no conditioning | 41 s | 4.4x |
+| ...plus batched decoding (faster-whisper) | 25 s | 7.3x |
+| MLX Whisper (Apple GPU), same fast settings | 22-31 s | 6-8x |
+
+The library defaults are tuned for maximum accuracy on a server: any 30 s
+window whose result looks low-confidence is re-decoded up to 6 more times at
+rising temperatures, each decode uses a 5-way beam search, and each window is
+conditioned on the previous text (which is sequential, so nothing can run in
+parallel). Music, noise and silence trigger the retries constantly. The app
+now uses greedy decoding, no fallback and no conditioning, and decodes several
+windows at once. For caption timing the transcripts are equivalent. On a
+fanless 8GB laptop, swapping makes every setting slower still, so closing
+browser tabs and other heavy apps during a run helps.
+
 ## Project layout
 
 ```
@@ -159,7 +187,7 @@ shorts-ai/
 │   ├── assets/fonts/        bundled DejaVu Sans (regular + bold)
 │   ├── static/              single-page frontend (upload -> review -> results/edit)
 │   └── pipeline/
-│       ├── transcribe.py        local Whisper wrapper (cached transcripts)
+│       ├── transcribe.py        local Whisper wrapper (MLX / faster-whisper, cached transcripts)
 │       ├── highlights.py        heuristic + optional-LLM scoring, recap detection
 │       ├── retention.py         YouTube "most replayed" window detection
 │       ├── presets.py           caption style + aspect ratio presets
