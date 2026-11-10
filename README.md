@@ -176,6 +176,21 @@ windows at once. For caption timing the transcripts are equivalent. On a
 fanless 8GB laptop, swapping makes every setting slower still, so closing
 browser tabs and other heavy apps during a run helps.
 
+### Render speed
+
+Rendering a short used to cut the clip, then reframe it to 9:16, then burn the
+captions in -- three full video encodes -- and the face tracking ran on
+full-resolution HD frames. It's now one ffmpeg run (cut + face-tracked crop +
+captions, one encode) and the face tracking uses small frames pulled in one
+pass. Measured on an 8GB M2 MacBook Air, one 55 s clip from a 1080p source:
+**19.5 s before, 7-8 s now (about 2.5x faster)**. Same output on Windows, macOS
+and Linux (software x264); `scripts/bench_render.py <job folder>` reproduces
+the numbers. The caption-free copy used by the results-page caption editor is
+now rebuilt from the original video only if you actually edit captions.
+Set `render.single_pass: false` in `config.yaml` to go back to the old pipeline.
+Apple's hardware encoder is available as `render.encoder: videotoolbox` but
+measured no faster than x264 on an M2 Air.
+
 ## Project layout
 
 ```

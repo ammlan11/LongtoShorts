@@ -19,6 +19,7 @@ import functools
 import glob
 import logging
 import os
+import platform
 import re
 import shutil
 import subprocess
@@ -154,3 +155,53 @@ def strip_ansi(text: str) -> str:
     """Removes terminal colour codes (yt-dlp/ffmpeg error text) so messages
     shown in the web UI aren't littered with '[0;31m' junk."""
     return _ANSI_RE.sub("", text or "")
+
+
+# ---- video encoder selection -------------------------------------------------
+# Every stage of the pipeline re-encodes video. libx264 (software) is the
+# default everywhere. Apple's hardware H.264 encoder (VideoToolbox) is
+# available as an opt-in (render.encoder: videotoolbox) but measured NO faster
+# than x264 on an M2 MacBook Air (6.7 s vs 4.4-5.8 s for a 55 s clip, and 2-4x
+# the file size), so "auto" does not use it.
+
+_ENCODER_PREF = "auto"
+
+
+def set_encoder_preference(pref: str | None) -> None:
+    """auto | libx264 | videotoolbox (from config.yaml render.encoder)."""
+    global _ENCODER_PREF
+    _ENCODER_PREF = (pref or "auto").lower()
+
+
+@functools.lru_cache(maxsize=8)
+def _has_encoder(ffmpeg_bin: str, name: str) -> bool:
+    try:
+        r = subprocess.run([ffmpeg_bin, "-hide_banner", "-encoders"], capture_output=True, text=True, timeout=15)
+        return name in (r.stdout or "")
+    except Exception:
+        return False
+
+
+def resolve_encoder() -> str:
+    """The concrete encoder in use: "videotoolbox" or "libx264"."""
+    pref = _ENCODER_PREF
+    if pref == "libx264":
+        return "libx264"
+    want_vt = pref == "videotoolbox" and platform.system() == "Darwin"
+    if want_vt and _has_encoder(get_ffmpeg(), "h264_videotoolbox"):
+        return "videotoolbox"
+    return "libx264"
+
+
+def video_encode_args(role: str = "final") -> list[str]:
+    """ffmpeg output args for the video stream. role="final" is the
+    deliverable; role="base" is the caption-free intermediate kept for later
+    caption edits (encoded faster / bigger since it is re-encoded again)."""
+    if resolve_encoder() == "videotoolbox":
+        bitrate = "10M" if role == "final" else "16M"
+        return ["-c:v", "h264_videotoolbox", "-b:v", bitrate, "-profile:v", "high", "-pix_fmt", "yuv420p"]
+    if role == "final":
+        # superfast crf 21: ~25% quicker than veryfast crf 20 with no visible
+        # difference at Shorts resolution (YouTube re-encodes on upload anyway).
+        return ["-c:v", "libx264", "-preset", "superfast", "-crf", "21", "-pix_fmt", "yuv420p"]
+    return ["-c:v", "libx264", "-preset", "ultrafast", "-crf", "18", "-pix_fmt", "yuv420p"]

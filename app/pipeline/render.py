@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from . import captions, overlays, reframe
-from .ffmpeg_util import FFMPEG_MISSING_HINT, find_ffmpeg, get_ffmpeg
+from .ffmpeg_util import FFMPEG_MISSING_HINT, find_ffmpeg, get_ffmpeg, video_encode_args
 from .highlights import Candidate, find_highlights
 from .retention import find_most_replayed_window
 from .transcribe import Transcript, Word, transcribe_video
@@ -45,22 +45,64 @@ def _cut_clip(source: Path, start: float, end: float, out_path: Path) -> None:
     subprocess.run(cmd, capture_output=True, text=True, check=True)
 
 
-def render_clip(
-    source_video: Path,
-    candidate: Candidate,
-    out_dir: Path,
-    work_dir: Path,
-    index: int,
-    cfg,
-) -> dict:
-    out_dir.mkdir(parents=True, exist_ok=True)
-    work_dir.mkdir(parents=True, exist_ok=True)
+def _render_single_pass(source_video, candidate, vertical_path, final_path, work_dir, index, cfg) -> dict:
+    """Cut + face-tracked vertical crop + (optional) caption burn-in in a
+    single ffmpeg run -- one decode, one encode. The caption-free vertical
+    clip that results-page caption edits start from is NOT encoded here (that
+    was ~25% of the render time); it's rebuilt on demand from the source using
+    the crop filter saved next to the clip (see jobs._caption_free_base)."""
+    tw, th = cfg.reframe.target_width, cfg.reframe.target_height
+    plan = reframe.build_crop_plan(
+        source_video, tw, th, cfg.reframe.smoothing_window,
+        start=candidate.start, duration=candidate.duration,
+    )
+    core = reframe.crop_scale_filter(plan, tw, th)
+    (work_dir / f"clip{index}_crop_filter.txt").write_text(core)
 
-    raw_path = work_dir / f"clip{index}_00_raw.mp4"
-    vertical_path = work_dir / f"clip{index}_01_vertical.mp4"
-    overlaid_path = work_dir / f"clip{index}_02_overlaid.mp4"
-    final_path = out_dir / f"short_{index + 1}.mp4"
+    # -ss/-t as INPUT options (seeking before -i is still frame-accurate when
+    # re-encoding).
+    cmd = [
+        get_ffmpeg(require_ass=bool(cfg.captions.enabled)), "-y", "-nostdin",
+        "-ss", f"{candidate.start:.3f}", "-t", f"{candidate.duration:.3f}",
+        "-i", str(Path(source_video).resolve()),
+    ]
+    cwd = None
+    if cfg.captions.enabled:
+        ass_content = captions.build_ass(
+            candidate.words, candidate.start,
+            video_width=tw, video_height=th,
+            font=cfg.captions.font, font_size=cfg.captions.font_size,
+            highlight_color=cfg.captions.highlight_color, base_color=cfg.captions.base_color,
+            outline_color=cfg.captions.outline_color, back_color=cfg.captions.back_color,
+            position=cfg.captions.position, border_style=cfg.captions.border_style,
+            outline_width=cfg.captions.outline_width, shadow_width=cfg.captions.shadow_width,
+        )
+        ass_path = work_dir / f"clip{index}.ass"
+        captions.write_ass_file(ass_content, ass_path)
+        # Same Windows-safe approach as captions.burn_subtitles: run from the
+        # .ass file's folder and reference it by bare name.
+        cwd = str(work_dir.resolve())
+        target = final_path
+        vf = f"{core},ass='{ass_path.name}'"
+    else:
+        target = vertical_path
+        vf = core
+    cmd += ["-vf", vf, "-map", "0:v:0", "-map", "0:a:0?", *video_encode_args("final"),
+            "-c:a", "aac", "-b:a", "192k", str(Path(target).resolve())]
 
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=cwd)
+    if result.returncode != 0:
+        tail = "\n".join((result.stderr or "").strip().splitlines()[-8:])
+        raise RuntimeError(f"ffmpeg single-pass render failed (exit {result.returncode}):\n{tail}")
+    if not cfg.captions.enabled:
+        import shutil
+        shutil.copyfile(vertical_path, final_path)
+    return plan
+
+
+def _render_steps(source_video, candidate, raw_path, vertical_path, overlaid_path, final_path, work_dir, index, cfg):
+    """The original step-by-step pipeline: cut -> reframe -> (overlays) ->
+    captions. Slower (three encodes) but kept for overlays and as a fallback."""
     _cut_clip(source_video, candidate.start, candidate.end, raw_path)
 
     crop_plan = reframe.apply_reframe(
@@ -102,6 +144,40 @@ def render_clip(
     else:
         subprocess.run([get_ffmpeg(), "-y", "-i", str(overlaid_path), "-c", "copy", str(final_path)],
                         capture_output=True, text=True, check=True)
+    return crop_plan, stat_count
+
+
+def render_clip(
+    source_video: Path,
+    candidate: Candidate,
+    out_dir: Path,
+    work_dir: Path,
+    index: int,
+    cfg,
+) -> dict:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    work_dir.mkdir(parents=True, exist_ok=True)
+
+    vertical_path = work_dir / f"clip{index}_01_vertical.mp4"
+    overlaid_path = work_dir / f"clip{index}_02_overlaid.mp4"
+    final_path = out_dir / f"short_{index + 1}.mp4"
+    raw_path = work_dir / f"clip{index}_00_raw.mp4"
+    plan = None
+    stat_count = 0
+
+    # Fast path: ONE ffmpeg run does cut + face-tracked 9:16 crop + captions
+    # (previously three separate full re-encodes). Overlays (retired feature)
+    # still use the step-by-step path, as does any failure of the fast path.
+    if getattr(cfg, "render", None) is not None and cfg.render.single_pass and not cfg.overlays.enabled:
+        try:
+            plan = _render_single_pass(source_video, candidate, vertical_path, final_path, work_dir, index, cfg)
+        except Exception as exc:  # noqa: BLE001 - never lose a render to an optimisation
+            logger.warning("Single-pass render failed (%s); falling back to step-by-step", exc)
+            plan = None
+
+    if plan is None:
+        plan, stat_count = _render_steps(source_video, candidate, raw_path, vertical_path, overlaid_path,
+                                         final_path, work_dir, index, cfg)
 
     metadata = {
         "index": index,
@@ -113,7 +189,7 @@ def render_clip(
         "end": round(candidate.end, 2),
         "duration": round(candidate.duration, 2),
         "transcript_excerpt": candidate.text,
-        "face_tracked": crop_plan.get("found_face", False),
+        "face_tracked": plan.get("found_face", False),
         "overlay_count": stat_count,
         "most_replayed": candidate.most_replayed,
         "is_recap": candidate.is_recap,

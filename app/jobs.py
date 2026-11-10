@@ -360,6 +360,20 @@ class JobManager:
         vertical = work_dir / f"clip{index}_01_vertical.mp4"
         source = overlaid if overlaid.exists() else vertical
         if not source.exists():
+            # The fast render doesn't keep a caption-free copy; rebuild it from
+            # the original source video with the saved crop.
+            crop_file = work_dir / f"clip{index}_crop_filter.txt"
+            video = job.video_path
+            if crop_file.exists() and video is not None and Path(video).exists():
+                head = float(meta.get("trim_head", 0.0))
+                tail = float(meta.get("trim_tail", 0.0))
+                postedit.rebuild_vertical_base(
+                    Path(video), vertical,
+                    start=meta["start"] - head, duration=meta["duration"] + head + tail,
+                    crop_filter=crop_file.read_text(),
+                )
+                source = vertical
+        if not source.exists():
             raise PostEditError(
                 "The caption-free version of this clip is no longer on disk (its job folder may "
                 "have been cleaned up), so captions can't be changed without a full re-render."

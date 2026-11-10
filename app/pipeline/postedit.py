@@ -17,7 +17,7 @@ import subprocess
 from pathlib import Path
 
 from .captions import build_ass, burn_subtitles, write_ass_file
-from .ffmpeg_util import get_ffmpeg
+from .ffmpeg_util import get_ffmpeg, video_encode_args
 from .transcribe import Word
 
 logger = logging.getLogger("shorts_ai.postedit")
@@ -53,7 +53,7 @@ def trim_rendered_clip(
         get_ffmpeg(), "-y",
         "-ss", f"{fast_seek:.3f}", "-i", str(input_path),
         "-ss", f"{remainder:.3f}", "-t", f"{new_duration:.3f}",
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+        *video_encode_args("final"),
         "-c:a", "aac", "-b:a", "192k",
         str(tmp_output_path),
     ]
@@ -74,13 +74,29 @@ def cut_base_clip(source: Path, out_path: Path, head: float, duration: float) ->
         get_ffmpeg(), "-y",
         "-ss", f"{fast_seek:.3f}", "-i", str(source),
         "-ss", f"{head - fast_seek:.3f}", "-t", f"{duration:.3f}",
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+        *video_encode_args("final"),
         "-c:a", "aac", "-b:a", "192k",
         str(out_path),
     ]
     proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode != 0:
         raise PostEditError(f"ffmpeg failed while preparing the clip:\n{proc.stderr[-800:]}")
+
+
+def rebuild_vertical_base(source_video: Path, out_path: Path, start: float, duration: float, crop_filter: str) -> None:
+    """Re-creates a clip's caption-free vertical video from the original
+    source (cut + the same face-tracked crop used at render time). Used when
+    the single-pass render didn't keep that intermediate file."""
+    cmd = [
+        get_ffmpeg(), "-y", "-nostdin",
+        "-ss", f"{start:.3f}", "-t", f"{duration:.3f}", "-i", str(source_video),
+        "-vf", crop_filter, "-map", "0:v:0", "-map", "0:a:0?",
+        *video_encode_args("base"), "-c:a", "aac", "-b:a", "192k",
+        str(out_path),
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise PostEditError(f"ffmpeg failed while rebuilding the clip:\n{proc.stderr[-800:]}")
 
 
 def remove_captions(base_video: Path, tmp_output_path: Path, final_output_path: Path) -> None:

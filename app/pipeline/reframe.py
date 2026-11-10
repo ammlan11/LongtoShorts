@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -82,16 +83,63 @@ def _smooth(values: list[float], window: int) -> list[float]:
     return out
 
 
+_DETECT_MAX_WIDTH = 480  # face detection runs on frames downscaled to this width
+
+
+def _sample_frames_ffmpeg(path, start: float, duration: float, interval: float, src_w: int, src_h: int):
+    """Yields (t, gray_frame_ndarray, scale) for one frame every `interval`
+    seconds of [start, start+duration), pulled in ONE ffmpeg decode pass and
+    downscaled -- instead of seeking an OpenCV capture to each sample point
+    and running the detector on full-resolution (e.g. 1080p) frames. Returns
+    None if ffmpeg can't do it (caller falls back to the OpenCV path)."""
+    import numpy as np
+
+    scale = min(1.0, _DETECT_MAX_WIDTH / src_w)
+    w = max(2, int(round(src_w * scale / 2)) * 2)
+    h = max(2, int(round(src_h * scale / 2)) * 2)
+    cmd = [
+        get_ffmpeg(), "-v", "error", "-nostdin",
+        "-ss", f"{max(0.0, start - 2.0):.3f}", "-i", str(path),
+        "-ss", f"{start - max(0.0, start - 2.0):.3f}", "-t", f"{duration:.3f}",
+        "-an", "-sn", "-vf", f"fps={1.0 / interval:g},scale={w}:{h}",
+        "-pix_fmt", "gray", "-f", "rawvideo", "-",
+    ]
+    proc = subprocess.run(cmd, capture_output=True)
+    if proc.returncode != 0 or not proc.stdout:
+        return None
+    frame_bytes = w * h
+    n = len(proc.stdout) // frame_bytes
+    buf = np.frombuffer(proc.stdout, dtype=np.uint8)[: n * frame_bytes].reshape(n, h, w)
+    return [(i * interval, buf[i], w / src_w) for i in range(n)]
+
+
+def _detect_gray(gray, scale: float, axis: str) -> float | None:
+    min_size = max(20, int(60 * scale))
+    faces = _get_face_cascade().detectMultiScale(gray, scaleFactor=1.15, minNeighbors=5, minSize=(min_size, min_size))
+    if len(faces) == 0:
+        return None
+    x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
+    return ((x + w / 2) if axis == "x" else (y + h / 2)) / scale
+
+
 def build_crop_plan(
     clip_path: str | Path,
     target_width: int,
     target_height: int,
     smoothing_window: int = 5,
     sample_interval: float = 0.5,
+    start: float = 0.0,
+    duration: float | None = None,
 ) -> dict:
     """Returns a dict describing the crop: dimensions, pan axis, and a list of
-    (time, position) breakpoints, plus whether any face was ever found."""
+    (time, position) breakpoints, plus whether any face was ever found.
+
+    `start`/`duration` let the plan be built straight from the *source* video
+    for just one clip's window (times in the result are relative to `start`),
+    so no intermediate cut file is needed."""
     info = probe_video(clip_path)
+    if duration is None:
+        duration = info.duration - start
     target_ratio = target_width / target_height
     src_ratio = info.width / info.height
 
@@ -110,18 +158,12 @@ def build_crop_plan(
         max_pos = info.height - crop_h
         default_center = info.height / 2
 
-    cap = cv2.VideoCapture(str(clip_path))
     centers: list[float] = []
     times: list[float] = []
     found_any = False
 
-    t = 0.0
-    while t < info.duration:
-        cap.set(cv2.CAP_PROP_POS_MSEC, t * 1000)
-        ok, frame = cap.read()
-        if not ok:
-            break
-        center = _detect_primary_face_center(frame, axis)
+    def _push(t: float, center: float | None) -> None:
+        nonlocal found_any
         if center is not None:
             found_any = True
         elif centers:
@@ -130,8 +172,28 @@ def build_crop_plan(
             center = default_center
         times.append(t)
         centers.append(center)
-        t += sample_interval
-    cap.release()
+
+    t0 = time.perf_counter()
+    frames = None
+    try:
+        frames = _sample_frames_ffmpeg(clip_path, start, duration, sample_interval, info.width, info.height)
+    except Exception as exc:  # noqa: BLE001 - fall back to the slow path below
+        logger.warning("Fast face sampling failed (%s); using OpenCV seeking", exc)
+    if frames:
+        for t, gray, scale in frames:
+            _push(t, _detect_gray(gray, scale, axis))
+    else:
+        cap = cv2.VideoCapture(str(clip_path))
+        t = 0.0
+        while t < duration:
+            cap.set(cv2.CAP_PROP_POS_MSEC, (start + t) * 1000)
+            ok, frame = cap.read()
+            if not ok:
+                break
+            _push(t, _detect_primary_face_center(frame, axis))
+            t += sample_interval
+        cap.release()
+    logger.info("Face tracking: %d samples in %.1fs", len(times), time.perf_counter() - t0)
 
     if not times:
         times, centers = [0.0], [default_center]
@@ -216,6 +278,17 @@ def _build_step_expr(breakpoints: list[tuple[float, float]]) -> str:
         expr = f"if(lt(t,{t1:.3f}),{segment},{expr})"
 
     return expr
+
+
+def crop_scale_filter(plan: dict, target_width: int, target_height: int) -> str:
+    """The ffmpeg filter chain (crop following the tracked face -> scale to the
+    target size) for a crop plan from build_crop_plan()."""
+    expr = _build_step_expr(_decimate_breakpoints(plan["breakpoints"]))
+    if plan["axis"] == "x":
+        crop = f"crop=w={plan['crop_w']}:h={plan['crop_h']}:x='{expr}':y=0"
+    else:
+        crop = f"crop=w={plan['crop_w']}:h={plan['crop_h']}:x=0:y='{expr}'"
+    return f"{crop},scale={target_width}:{target_height},setsar=1"
 
 
 def apply_reframe(

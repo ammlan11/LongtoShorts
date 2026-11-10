@@ -29,12 +29,14 @@ from pydantic import BaseModel
 
 from .config import load_config
 from .jobs import JobManager
+from .pipeline.ffmpeg_util import set_encoder_preference
 from .pipeline.postedit import PostEditError
 from .pipeline.presets import ASPECT_PRESETS, CAPTION_PRESETS, DEFAULT_ASPECT_PRESET, DEFAULT_CAPTION_PRESET
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 cfg = load_config()
+set_encoder_preference(cfg.render.encoder)
 jobs = JobManager(cfg)
 
 app = FastAPI(title="Shorts AI")

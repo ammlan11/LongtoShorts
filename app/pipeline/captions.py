@@ -9,7 +9,7 @@ import logging
 import subprocess
 from pathlib import Path
 
-from .ffmpeg_util import get_ffmpeg
+from .ffmpeg_util import get_ffmpeg, video_encode_args
 from .transcribe import Word
 
 logger = logging.getLogger("shorts_ai.captions")
@@ -153,7 +153,7 @@ def burn_subtitles(input_path: str | Path, ass_path: str | Path, output_path: st
     cmd = [
         get_ffmpeg(require_ass=True), "-y", "-i", str(Path(input_path).resolve()),
         "-vf", f"ass='{ass_name}'",
-        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+        *video_encode_args("final"),
         "-c:a", "copy",
         str(Path(output_path).resolve()),
     ]

@@ -43,6 +43,13 @@ reframe:
   target_height: 1920
   smoothing_window: 15          # frames — higher = steadier but less responsive crop
 
+render:
+  encoder: auto                 # auto | libx264 | videotoolbox
+                                # auto = software x264 everywhere (videotoolbox, the Mac
+                                # hardware encoder, measured no faster on an M2 Air).
+  single_pass: true             # cut + reframe + captions in one ffmpeg run (fast).
+                                # false = the old step-by-step pipeline (slower).
+
 captions:
   # These are the fallback/default values. In normal use, the review step's
   # caption style picker (see app/pipeline/presets.py) overrides all of the

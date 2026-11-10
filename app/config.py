@@ -62,6 +62,18 @@ class ReframeConfig:
 
 
 @dataclass
+class RenderConfig:
+    # Video encoder for every render/re-encode step: "auto" (= libx264) or
+    # "videotoolbox" (Mac hardware encoder; measured no faster than x264 on
+    # an M2 Air, so it's opt-in).
+    encoder: str = "auto"
+    # Fast single-pass render (cut + reframe + captions in ONE ffmpeg run,
+    # face-tracking on downscaled frames). Set false to use the old
+    # step-by-step pipeline.
+    single_pass: bool = True
+
+
+@dataclass
 class CaptionsConfig:
     enabled: bool = True
     font: str = "DejaVu Sans"
@@ -109,6 +121,7 @@ class AppConfig:
     highlights: HighlightsConfig = field(default_factory=HighlightsConfig)
     reframe: ReframeConfig = field(default_factory=ReframeConfig)
     captions: CaptionsConfig = field(default_factory=CaptionsConfig)
+    render: RenderConfig = field(default_factory=RenderConfig)
     overlays: OverlaysConfig = field(default_factory=OverlaysConfig)
     server: ServerConfig = field(default_factory=ServerConfig)
 
@@ -151,6 +164,7 @@ def load_config(path: str | Path | None = None) -> AppConfig:
         highlights=_dc(HighlightsConfig, raw.get("highlights")),
         reframe=_dc(ReframeConfig, raw.get("reframe")),
         captions=_dc(CaptionsConfig, raw.get("captions")),
+        render=_dc(RenderConfig, raw.get("render")),
         overlays=_dc(OverlaysConfig, raw.get("overlays")),
         server=_dc(ServerConfig, raw.get("server")),
     )
