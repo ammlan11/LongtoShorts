@@ -67,6 +67,15 @@ def download_video(
             "yt-dlp isn't installed. Run: pip install -r requirements.txt"
         ) from e
 
+    from .ffmpeg_util import FFMPEG_MISSING_HINT, find_ffmpeg, strip_ansi
+
+    # Fail fast with an actionable message instead of downloading a video the
+    # rest of the pipeline can't process (yt-dlp itself also needs ffmpeg to
+    # merge the separate video+audio streams YouTube serves).
+    ffmpeg_path = find_ffmpeg()
+    if not ffmpeg_path:
+        raise DownloadError(FFMPEG_MISSING_HINT)
+
     dest_dir.mkdir(parents=True, exist_ok=True)
     outtmpl = str(dest_dir / "%(id)s.%(ext)s")
 
@@ -105,6 +114,11 @@ def download_video(
         "retries": 5,
         "fragment_retries": 5,
         "progress_hooks": [_hook],
+        # Tell yt-dlp exactly which ffmpeg to use rather than relying on it
+        # finding one on PATH (the usual cause of "ffmpeg is not installed"
+        # on Windows when it clearly is).
+        "ffmpeg_location": ffmpeg_path,
+        "no_color": True,
     }
 
     started = time.perf_counter()
@@ -113,7 +127,7 @@ def download_video(
             info = ydl.extract_info(url, download=True)
             path = Path(ydl.prepare_filename(info, outtmpl=outtmpl))
     except yt_dlp.utils.DownloadError as e:
-        raise DownloadError(f"Couldn't download that video: {e}") from e
+        raise DownloadError(f"Couldn't download that video: {strip_ansi(str(e))}") from e
     elapsed = time.perf_counter() - started
 
     # merge_output_format can change the final extension after post-processing

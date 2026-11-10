@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from . import captions, overlays, reframe
-from .ffmpeg_util import get_ffmpeg
+from .ffmpeg_util import FFMPEG_MISSING_HINT, find_ffmpeg, get_ffmpeg
 from .highlights import Candidate, find_highlights
 from .retention import find_most_replayed_window
 from .transcribe import Transcript, Word, transcribe_video
@@ -171,6 +171,9 @@ def analyze_video(
         logger.info("[%s] %.0f%%", stage, pct * 100)
         if progress_cb:
             progress_cb(stage, pct)
+
+    if not find_ffmpeg():
+        raise RuntimeError(FFMPEG_MISSING_HINT)
 
     report("transcribing", 0.0)
     transcript_cache = _transcript_cache_path(job_dir)

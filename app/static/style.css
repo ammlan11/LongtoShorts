@@ -713,6 +713,7 @@ button.secondary-btn:hover { border-color: var(--pink); transform: translateY(-1
 .results-header h2 { margin: 0; }
 
 .error-banner {
+  white-space: pre-line;
   background: rgba(255, 84, 112, 0.15);
   border: 1px solid var(--critical);
   color: var(--critical);

@@ -75,6 +75,12 @@ Aspect presets: **9:16**, **1:1**, **4:5**.
 - [ffmpeg](https://ffmpeg.org/) on your PATH, built with subtitle (libass)
   support. On macOS, Homebrew's default `ffmpeg` formula does **not**
   include it — run `brew install ffmpeg-full` (the app auto-detects it).
+  On Windows run `winget install Gyan.FFmpeg` (or `choco install ffmpeg`),
+  then **close and reopen your terminal** so it's on the PATH. The app also
+  looks in the usual install folders, and you can point it at a specific
+  build with the `SHORTS_AI_FFMPEG` environment variable. If ffmpeg can't be
+  found, link downloads and analysis stop with an install hint instead of a
+  cryptic yt-dlp error.
   `setup.sh` checks and warns.
 - RAM: 8GB works but is tight (see Performance notes). 16GB is comfortable.
 - Optional: [Ollama](https://ollama.com/download) with a model pulled
