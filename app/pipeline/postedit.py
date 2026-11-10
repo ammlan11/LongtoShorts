@@ -63,6 +63,36 @@ def trim_rendered_clip(
     return new_duration
 
 
+def cut_base_clip(source: Path, out_path: Path, head: float, duration: float) -> None:
+    """Writes a copy of the caption-free `source` clip with `head` seconds
+    removed from the front and the given total `duration` kept. Used so that
+    caption edits after a trim start from the *trimmed* footage (otherwise
+    re-burning would silently bring the trimmed-off seconds back, and the
+    captions would drift out of sync with the video)."""
+    fast_seek = max(0.0, head - 2.0)
+    cmd = [
+        get_ffmpeg(), "-y",
+        "-ss", f"{fast_seek:.3f}", "-i", str(source),
+        "-ss", f"{head - fast_seek:.3f}", "-t", f"{duration:.3f}",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+        "-c:a", "aac", "-b:a", "192k",
+        str(out_path),
+    ]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise PostEditError(f"ffmpeg failed while preparing the clip:\n{proc.stderr[-800:]}")
+
+
+def remove_captions(base_video: Path, tmp_output_path: Path, final_output_path: Path) -> None:
+    """Replaces the final short with the caption-free `base_video` (stream
+    copy -- near-instant)."""
+    cmd = [get_ffmpeg(), "-y", "-i", str(base_video), "-c", "copy", str(tmp_output_path)]
+    proc = subprocess.run(cmd, capture_output=True, text=True)
+    if proc.returncode != 0:
+        raise PostEditError(f"ffmpeg failed while removing captions:\n{proc.stderr[-800:]}")
+    tmp_output_path.replace(final_output_path)
+
+
 def reburn_captions_with_emphasis(
     source_video_path: Path,
     ass_path: Path,

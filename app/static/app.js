@@ -459,6 +459,13 @@ function refreshResultCard(card, jobId, short, { videoChanged = false } = {}) {
 function buildEditPanel(editPanel, card, jobId, short) {
   editPanel.innerHTML = `
     <div class="edit-section">
+      <h4>Captions</h4>
+      <p class="note">Take the burned-in captions off this short completely (or put them back). Keeps any trim you've applied.</p>
+      <div class="captions-state" data-role="captions-state"></div>
+      <button class="edit-apply-btn" data-role="captions-toggle" type="button"></button>
+    </div>
+
+    <div class="edit-section">
       <h4>Trim</h4>
       <p class="note">Cuts the already-rendered file directly, so it's fast — but captions or overlays near the new edge may end abruptly rather than re-timing to it.</p>
       <div class="edit-row">
@@ -501,6 +508,7 @@ function buildEditPanel(editPanel, card, jobId, short) {
     </div>
 
     <div class="edit-status" data-role="edit-status"></div>
+    <button class="secondary-btn edit-minimise-btn" data-role="minimise" type="button">▲ Minimise</button>
   `;
 
   const statusEl = editPanel.querySelector('[data-role="edit-status"]');
@@ -513,6 +521,37 @@ function buildEditPanel(editPanel, card, jobId, short) {
       statusTimer = setTimeout(() => { statusEl.textContent = ""; }, 4000);
     }
   }
+
+  // Collapse the whole edit panel (same as pressing the card's Edit/Close edit button).
+  editPanel.querySelector('[data-role="minimise"]').addEventListener("click", () => {
+    card.querySelector(".edit-toggle-btn").click();
+  });
+
+  const capStateEl = editPanel.querySelector('[data-role="captions-state"]');
+  const capBtn = editPanel.querySelector('[data-role="captions-toggle"]');
+  function renderCaptionsState() {
+    const on = short.captions_enabled !== false;
+    capStateEl.textContent = on ? "Captions: on" : "Captions: off";
+    capStateEl.classList.toggle("off", !on);
+    capBtn.textContent = on ? "Remove captions" : "Put captions back";
+  }
+  renderCaptionsState();
+  capBtn.addEventListener("click", async () => {
+    const turnOn = short.captions_enabled === false;
+    capBtn.disabled = true;
+    setStatus(turnOn ? "Adding captions…" : "Removing captions…");
+    try {
+      const meta = await postJson(`/api/jobs/${jobId}/shorts/${short.index}/captions`, { enabled: turnOn });
+      Object.assign(short, meta);
+      refreshResultCard(card, jobId, short, { videoChanged: true });
+      renderCaptionsState();
+      setStatus(turnOn ? "Captions added ✓" : "Captions removed ✓");
+    } catch (err) {
+      setStatus(err.message, true);
+    } finally {
+      capBtn.disabled = false;
+    }
+  });
 
   editPanel.querySelector('[data-role="trim-apply"]').addEventListener("click", async (e) => {
     const btn = e.currentTarget;
@@ -573,6 +612,7 @@ function buildEditPanel(editPanel, card, jobId, short) {
       const meta = await postJson(`/api/jobs/${jobId}/shorts/${short.index}/emphasis`, { words });
       Object.assign(short, meta);
       refreshResultCard(card, jobId, short, { videoChanged: true });
+      renderCaptionsState();
       setStatus("Captions updated ✓");
     } catch (err) {
       setStatus(err.message, true);

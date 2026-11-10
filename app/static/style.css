@@ -383,6 +383,10 @@ button#start-btn:disabled { opacity: 0.35; cursor: not-allowed; animation: none;
 .result-btn-row .result-download { margin-top: 0; flex: 1; }
 .result-btn-row .edit-toggle-btn { flex: 1; font-size: 0.85rem; padding: 10px; }
 
+/* Author rules like `display:flex` beat the browser's default [hidden] rule,
+   which is why the Edit panel used to stay open after "Close edit". */
+[hidden] { display: none !important; }
+
 .result-edit {
   margin-top: 10px;
   padding-top: 12px;
@@ -715,3 +719,7 @@ button.secondary-btn:hover { border-color: var(--pink); transform: translateY(-1
   padding: 14px;
   border-radius: 12px;
 }
+
+.captions-state { font-weight: 600; font-size: 0.85rem; margin: 0 0 8px; }
+.captions-state.off { color: var(--muted, #8a8a9a); }
+.edit-minimise-btn { align-self: flex-end; }

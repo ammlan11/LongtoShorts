@@ -14,6 +14,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import test_api_e2e as e2e  # reuse its fake-transcript + transcribe patch
 
 
+def job_dir_for(client, job_id):
+    from app.main import jobs
+    return jobs.get(job_id).job_dir
+
+
 def main():
     source = Path(sys.argv[1] if len(sys.argv) > 1 else "/tmp/shorts_ai_test/source.mp4")
     duration = e2e.probe_duration(source)
@@ -101,6 +106,36 @@ def main():
     meta = r.json()
     assert abs(meta["duration"] - (orig_duration - 1.0)) < 0.2, meta
     print(meta)
+
+    print("\n=== POST /captions (remove, then restore), after a trim ===")
+    def dur(path):
+        return e2e.probe_duration(path)
+    out = Path(job_dir_for(client, job_id)) / "output" / meta["file"]
+    def grab(tag):
+        import subprocess, numpy as np
+        png = f"/tmp/frame_{tag}.png"
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-ss", "3", "-i", str(out), "-frames:v", "1", png], check=True)
+        from PIL import Image
+        a = np.asarray(Image.open(png).convert("L"), dtype=float)
+        h = a.shape[0]
+        return a[int(h * 0.60):int(h * 0.85)]  # lower-third caption band
+    r = client.post(f"/api/jobs/{job_id}/shorts/{index}/captions", json={"enabled": False})
+    assert r.status_code == 200, r.text
+    off = r.json()
+    band_off = grab("off")
+    assert off["captions_enabled"] is False
+    assert abs(dur(out) - off["duration"]) < 0.5, (dur(out), off["duration"])  # trim kept
+    r = client.post(f"/api/jobs/{job_id}/shorts/{index}/captions", json={"enabled": False})
+    assert r.status_code == 200 and r.json()["captions_enabled"] is False  # idempotent
+    r = client.post(f"/api/jobs/{job_id}/shorts/{index}/captions", json={"enabled": True})
+    assert r.status_code == 200, r.text
+    on = r.json()
+    assert on["captions_enabled"] is True and on["emphasis_words"] == ["profit"]
+    assert abs(dur(out) - on["duration"]) < 0.5, (dur(out), on["duration"])
+    band_on = grab("on")
+    import numpy as np
+    assert np.abs(band_on - band_off).mean() > 1.0, "captions band looks identical on vs off"
+    print("captions off/on OK; durations stay", on["duration"], "band diff %.2f" % np.abs(band_on - band_off).mean())
 
     print("\n=== POST /trim with an invalid (negative) amount -> expect 400 ===")
     r = client.post(f"/api/jobs/{job_id}/shorts/{index}/trim", json={"trim_start": -5.0, "trim_end": 0.0})

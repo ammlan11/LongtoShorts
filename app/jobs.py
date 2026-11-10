@@ -318,6 +318,10 @@ class JobManager:
         meta["start"] = round(meta["start"] + max(0.0, trim_start), 2)
         meta["end"] = round(meta["end"] - max(0.0, trim_end), 2)
         meta["duration"] = round(new_duration, 2)
+        # Cumulative amounts cut from the front/back of the caption-free base
+        # clip, so later caption edits can rebuild from the trimmed footage.
+        meta["trim_head"] = round(meta.get("trim_head", 0.0) + max(0.0, trim_start), 3)
+        meta["trim_tail"] = round(meta.get("trim_tail", 0.0) + max(0.0, trim_end), 3)
         self._persist_short_metadata(job, meta)
         logger.info("Job %s short %d trimmed to %.1fs", job_id, index, new_duration)
         return meta
@@ -348,12 +352,51 @@ class JobManager:
         self._persist_short_metadata(job, meta)
         return meta
 
+    def _caption_free_base(self, job: Job, meta: dict, index: int) -> Path:
+        """Path of this short's caption-free video, with any post-render trim
+        already applied. Raises PostEditError if the work files are gone."""
+        work_dir = job.job_dir / "work"
+        overlaid = work_dir / f"clip{index}_02_overlaid.mp4"
+        vertical = work_dir / f"clip{index}_01_vertical.mp4"
+        source = overlaid if overlaid.exists() else vertical
+        if not source.exists():
+            raise PostEditError(
+                "The caption-free version of this clip is no longer on disk (its job folder may "
+                "have been cleaned up), so captions can't be changed without a full re-render."
+            )
+        head = float(meta.get("trim_head", 0.0))
+        tail = float(meta.get("trim_tail", 0.0))
+        if head <= 0 and tail <= 0:
+            return source
+        trimmed = work_dir / f"clip{index}_03_trimbase.mp4"
+        postedit.cut_base_clip(source, trimmed, head, meta["duration"])
+        return trimmed
+
+    def set_short_captions(self, job_id: str, index: int, enabled: bool) -> dict:
+        """Removes (enabled=False) or restores (enabled=True) the burned-in
+        captions on a rendered short, keeping any trim and emphasis words."""
+        job, meta = self._get_short(job_id, index)
+        if job is None or meta is None:
+            raise PostEditError("Short not found (job isn't done, or no such clip index).")
+        if bool(meta.get("captions_enabled", True)) == enabled:
+            return meta
+        if enabled:
+            return self.apply_short_emphasis(job_id, index, meta.get("emphasis_words") or [])
+
+        base = self._caption_free_base(job, meta, index)
+        final_path = job.job_dir / "output" / meta["file"]
+        postedit.remove_captions(base, final_path.with_suffix(".nocaptmp.mp4"), final_path)
+        meta["captions_enabled"] = False
+        self._persist_short_metadata(job, meta)
+        logger.info("Job %s short %d: captions removed", job_id, index)
+        return meta
+
     def apply_short_emphasis(self, job_id: str, index: int, words: list[str]) -> dict:
         """Re-burns this short's captions with the given keywords always
         highlighted (not just when they're the actively-spoken word),
         reusing the clip's own cached transcript and original caption style
         -- see pipeline/postedit.py for why this is fast rather than a full
-        re-render."""
+        re-render. Also turns captions back on if they had been removed."""
         job, meta = self._get_short(job_id, index)
         if job is None or meta is None:
             raise PostEditError("Short not found (job isn't done, or no such clip index).")
@@ -368,9 +411,7 @@ class JobManager:
             raise PostEditError("Couldn't find this clip's words in the cached transcript.")
 
         work_dir = job.job_dir / "work"
-        overlaid = work_dir / f"clip{index}_02_overlaid.mp4"
-        vertical = work_dir / f"clip{index}_01_vertical.mp4"
-        source_for_captions = overlaid if overlaid.exists() else vertical
+        source_for_captions = self._caption_free_base(job, meta, index)
 
         final_path = job.job_dir / "output" / meta["file"]
         ass_path = work_dir / f"clip{index}.ass"
@@ -384,6 +425,7 @@ class JobManager:
             caption_cfg=job.cfg.captions,
         )
         meta["emphasis_words"] = sorted(emphasis_set)
+        meta["captions_enabled"] = True
         self._persist_short_metadata(job, meta)
         logger.info("Job %s short %d: re-burned captions emphasizing %s", job_id, index, sorted(emphasis_set))
         return meta

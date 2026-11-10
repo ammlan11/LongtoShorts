@@ -199,6 +199,10 @@ class EmphasisRequest(BaseModel):
     words: list[str] = []
 
 
+class CaptionsRequest(BaseModel):
+    enabled: bool
+
+
 @app.post("/api/jobs/{job_id}/shorts/{index}/trim")
 def trim_short(job_id: str, index: int, body: TrimRequest):
     """Step 3 (results page): quick-trim an already-rendered short in place.
@@ -233,6 +237,18 @@ def emphasize_short(job_id: str, index: int, body: EmphasisRequest):
     except PostEditError as e:
         raise HTTPException(400, str(e))
     return meta
+
+
+@app.post("/api/jobs/{job_id}/shorts/{index}/captions")
+def set_short_captions(job_id: str, index: int, body: CaptionsRequest):
+    """Step 3: remove the burned-in captions from a rendered short entirely
+    (enabled=false), or put them back (enabled=true)."""
+    try:
+        return jobs.set_short_captions(job_id, index, body.enabled)
+    except PostEditError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:  # ffmpeg etc.
+        raise HTTPException(500, str(e))
 
 
 @app.post("/api/jobs/{job_id}/shorts/{index}/suggest-captions")

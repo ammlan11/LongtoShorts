@@ -123,6 +123,9 @@ def render_clip(
         # whether or not either has been used yet.
         "tags": [],
         "emphasis_words": [],
+        "captions_enabled": bool(cfg.captions.enabled),
+        "trim_head": 0.0,
+        "trim_tail": 0.0,
     }
     (out_dir / f"short_{index + 1}.json").write_text(json.dumps(metadata, indent=2))
     return metadata
